@@ -1,0 +1,31 @@
+# Keys inside the darshan screen, for Vayu's keybinding search
+# (keybind-search.py reads ~/.tmux/plugins/*/scripts). Generated from
+# internal/tui/keys.go by `go test ./internal/tui -update`; don't edit.
+# keybind: Tmux/darshan reading | j / k | Move down / up (next / previous page once the page is all shown)
+# keybind: Tmux/darshan reading | h / l | Move left / right when zoomed (else previous / next page)
+# keybind: Tmux/darshan reading | J / K | Move to the next / previous page
+# keybind: Tmux/darshan reading | Ctrl+d / Ctrl+u | Scroll half a screen down / up
+# keybind: Tmux/darshan reading | Ctrl+f / Ctrl+b | Scroll a screen down / up
+# keybind: Tmux/darshan reading | g g / G | Jump to the first / last page
+# keybind: Tmux/darshan reading | N G / : N | Jump to page (or line) N; a number before j, k, J or K repeats it
+# keybind: Tmux/darshan reading | / | Search the document's text
+# keybind: Tmux/darshan reading | n / N | Jump to the next / previous match
+# keybind: Tmux/darshan reading | + / - | Grow / shrink the zoom
+# keybind: Tmux/darshan reading | = | Reset to fit the whole page
+# keybind: Tmux/darshan reading | w | Toggle fitting the page's width
+# keybind: Tmux/darshan reading | i | Invert the colours of pages and pictures (dark mode)
+# keybind: Tmux/darshan reading | [ / ] | Switch to the previous / next file in the folder
+# keybind: Tmux/darshan reading | f / o / Ctrl+p | Search for a file on the whole system (with a preview)
+# keybind: Tmux/darshan reading | a | Open the talk with the agent that opened this file, to ask it something
+# keybind: Tmux/darshan reading | z | Toggle zen mode: the full screen, nothing but the page
+# keybind: Tmux/darshan reading | r | Reload the file (it also reloads by itself when it changes)
+# keybind: Tmux/darshan reading | y | Copy the file's path
+# keybind: Tmux/darshan reading | q / v | Close the popup; the file stays open for next time
+# keybind: Tmux/darshan reading | x | Close the file
+# keybind: Tmux/darshan reading | ? | Show every key
+# keybind: Tmux/darshan search | Enter | Open the picked file
+# keybind: Tmux/darshan search | Up / Down / Ctrl+j / Ctrl+k | Move through the results while typing
+# keybind: Tmux/darshan search | Esc | Leave typing, then j, k, g g, G and Ctrl+d / Ctrl+u move (i types again; Esc again closes)
+# keybind: Tmux/darshan search | Tab / Shift+Tab | Switch between all files, PDFs, images and Markdown
+# keybind: Tmux/darshan talk | Enter | Send your question, with what's on screen, to the agent
+# keybind: Tmux/darshan talk | Esc | Close the talk

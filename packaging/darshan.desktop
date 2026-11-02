@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=darshan
+Comment=PDFs, images and Markdown in the terminal
+Exec=darshan open %f
+Icon=x-office-document
+Terminal=false
+NoDisplay=true
+MimeType=application/pdf;image/png;image/jpeg;image/gif;image/webp;image/bmp;text/markdown;
+Categories=Office;Viewer;Graphics;

@@ -1,0 +1,8 @@
+# The project website (docs/, GitHub Pages): built by scripts/build-site.py
+name = "darshan"
+sanskrit = "दर्शन"
+meaning = "seeing, a view"
+tagline = "PDFs, images and Markdown in your terminal: vim keys, a search across the whole system with a live preview, zen mode, and a line to the AI agent that opened the file."
+color = "mauve"
+kind = "document viewer"
+logo = "assets/logo.svg"
