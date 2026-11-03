@@ -2,6 +2,10 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
+## Unreleased
+
+- A logo and a shloka at the top of the README and the website: every Vayu tool has them now.
+
 ## v0.1.0 -- 2026-11-02
 
 - PDFs, images and Markdown in the terminal, as real pictures on kitty (tmux

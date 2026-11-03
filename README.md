@@ -2,6 +2,15 @@
   <img alt="darshan" src="assets/logo.svg" width="120">
 </p>
 
+<!-- identity -->
+<p align="center">
+  <b>न तु मां शक्यसे द्रष्टुमनेनैव स्वचक्षुषा ।<br>
+  दिव्यं ददामि ते चक्षुः पश्य मे योगमैश्वरम् ॥</b><br>
+  <i>You cannot see me with these eyes alone; I give you an eye that can. Look.</i><br>
+  <sub>Bhagavad Gītā 11.8</sub>
+</p>
+<!-- /identity -->
+
 <p align="center">
   <b>PDFs, images and Markdown in your terminal.</b><br>
   Vim keys, a search across the whole system with a live preview, and a line to the AI agent that opened the file.

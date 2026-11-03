@@ -6,3 +6,6 @@ tagline = "PDFs, images and Markdown in your terminal: vim keys, a search across
 color = "mauve"
 kind = "document viewer"
 logo = "assets/logo.svg"
+shloka = "न तु मां शक्यसे द्रष्टुमनेनैव स्वचक्षुषा ।\nदिव्यं ददामि ते चक्षुः पश्य मे योगमैश्वरम् ॥"
+shloka_meaning = "You cannot see me with these eyes alone; I give you an eye that can. Look."
+shloka_source = "Bhagavad Gītā 11.8"
