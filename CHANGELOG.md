@@ -2,8 +2,26 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
-## Unreleased
+## v0.2.0 -- 2026-11-09
 
+- Vim keys, the grammar every Vayu tool now shares (from the new shared
+  module vyakarana): `Space` is the leader, with a which-key box after
+  300 ms: `Space u` toggles the view (zen, dark, fit width), `Space b` the
+  file (close, next, previous), `Space o` opens it elsewhere (the desktop's
+  viewer, new; `$EDITOR` for Markdown, new), `Space k` asks the agent,
+  `Space g p` goes to a page. `Space Space` searches every action; `?`
+  scrolls and no longer closes on a stray key.
+- `Space` no longer pages down: `Ctrl+f` does. Moved keys say where they
+  went: `a` → `Space k`, `i` → `Space u i`, `w` → `Space u w`, `x` →
+  `Space b d`.
+- The popup closes with its own key (`@darshan-key`), not a hard-coded `v`;
+  tmux spellings like `C-v` or `M-v` work too.
+- Keys typed fast (`5j`, `gg`, `Space Space` in one go) count as separate
+  keys: the terminal hands them over together.
+- The README's key tables and `scripts/keybindings` are generated from the
+  keymap; the search shows each key's view and mode (`darshan:normal`).
+- The drawing kit (`internal/ui`) and kitty's diacritics come from
+  vyakarana instead of copies.
 - Every corner is rounded: the website's callouts.
 - A logo and a shloka at the top of the README and the website: every Vayu tool has them now.
 

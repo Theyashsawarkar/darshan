@@ -11,24 +11,32 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/Theyashsawarkar/vyakarana/keymap"
+	vmode "github.com/Theyashsawarkar/vyakarana/mode"
+	"github.com/Theyashsawarkar/vyakarana/popup"
+	"github.com/Theyashsawarkar/vyakarana/ui"
+
 	"github.com/Theyashsawarkar/darshan/internal/doc"
 	"github.com/Theyashsawarkar/darshan/internal/state"
-	"github.com/Theyashsawarkar/darshan/internal/ui"
 )
 
 // Options start the screen.
 type Options struct {
-	File   string
-	Page   int
-	Popup  bool   // in a tmux popup: q closes it, z reopens it another size
-	Client string // the tmux client the popup is on
-	Exe    string // this program, to reopen the popup
+	File  string
+	Page  int
+	Popup bool // in a tmux popup: q closes it, z reopens it another size
+	// PopupKey is the popup's own key (@darshan-key): inside, it closes
+	// the popup too, like pressing it again outside.
+	PopupKey string
+	Client   string // the tmux client the popup is on
+	Exe      string // this program, to reopen the popup
 }
 
 type mode int
@@ -40,6 +48,7 @@ const (
 	modeFind
 	modeTalk
 	modeHelp
+	modePalette
 )
 
 // Model is the screen.
@@ -72,9 +81,11 @@ type Model struct {
 	id       uint32
 	png      string
 
-	count    string
-	pendingG bool
-	input    []rune
+	eng   keymap.Engine
+	which bool // the which-key box is showing
+	help  popup.Help
+	pal   popup.Palette
+	input []rune
 
 	query    string
 	matches  []int
@@ -96,7 +107,8 @@ const (
 
 // New makes the screen, on the given file or the last one left open.
 func New(o Options) Model {
-	m := Model{opt: o, st: ui.New(ui.LoadTheme("darshan")), g: newGfx(o.Client), s: state.Load(), zoom: 1, id: viewID1, page: 1}
+	m := Model{opt: o, st: ui.New(ui.LoadTheme("darshan")), g: newGfx(o.Client), s: state.Load(), zoom: 1, id: viewID1, page: 1,
+		eng: keymap.NewEngine(Keys, vmode.Normal)}
 	file, page := o.File, o.Page
 	if file == "" {
 		file, page = m.s.File, m.s.Page
@@ -285,10 +297,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.find.update(&m, msg)
 		}
 		return m, nil
+	case popup.WhichMsg:
+		m.which = msg.Gen == m.eng.Gen() && m.eng.Waiting()
+		return m, nil
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyRunes && !msg.Paste && !msg.Alt && len(msg.Runes) > 1 {
+			return m.burst(msg.Runes)
+		}
 		return m.key(msg)
 	}
 	return m, nil
+}
+
+// burst takes keys typed faster than the terminal is read, which Bubble
+// Tea hands over as one message ("5j", "gg", "  "), one key at a time,
+// so counts, sequences and the Space leader work at any speed.
+func (m Model) burst(runes []rune) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	for _, r := range runes {
+		k := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+		if r == ' ' {
+			k.Type = tea.KeySpace
+		}
+		next, cmd := m.key(k)
+		m = next.(Model)
+		cmds = append(cmds, cmd)
+		if m.quitting {
+			break
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) gotShot(r shot) (tea.Model, tea.Cmd) {
@@ -361,7 +399,7 @@ func (m Model) command(c cmdMsg) (tea.Model, tea.Cmd) {
 		if m.find != nil {
 			m.closeFind()
 		}
-		if m.mode == modeHelp || m.mode == modeSearch || m.mode == modeCommand {
+		if m.mode == modeHelp || m.mode == modePalette || m.mode == modeSearch || m.mode == modeCommand {
 			m.mode = modeRead
 		}
 		if c.c.Why != "" {
@@ -417,9 +455,21 @@ func (m *Model) closeFile() {
 
 func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := k.String()
+	m.which = false
 	switch m.mode {
 	case modeHelp:
-		m.mode = modeRead
+		if m.help.Key(s) {
+			m.mode = modeRead
+		}
+		return m, nil
+	case modePalette:
+		act, closed := m.pal.Key(s)
+		if closed {
+			m.mode = modeRead
+		}
+		if act != "" {
+			return m.run(act, 1, false)
+		}
 		return m, nil
 	case modeFind:
 		return m.find.key(&m, k)
@@ -427,46 +477,46 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.typing(k)
 	}
 	m.msg = ""
-	// a number before a motion repeats it
-	if len(s) == 1 && s[0] >= '0' && s[0] <= '9' && (s != "0" || m.count != "") {
-		m.count += s
-		m.pendingG = false
-		return m, nil
-	}
-	n := 1
-	counted := m.count != ""
-	if counted {
-		n, _ = strconv.Atoi(m.count)
-		m.count = ""
-	}
-	if m.pendingG {
-		m.pendingG = false
-		if s == "g" {
-			return m, m.goTo(1, true)
-		}
-	}
-	if m.file == "" && !strings.Contains(" q f o ctrl+p ? ctrl+c ", " "+s+" ") {
-		return m, nil
-	}
-	switch s {
-	case "q", "ctrl+c":
+	if m.opt.Popup && !m.eng.Waiting() && popup.IsPopupKey(s, m.opt.PopupKey) {
 		return m.quit()
-	case "v":
-		if m.opt.Popup {
-			return m.quit()
-		}
-	case "x":
+	}
+	r := m.eng.Feed(s, "")
+	if r.Pending {
+		return m, popup.WhichAfter(r.Gen)
+	}
+	if msg := r.Message(); msg != "" {
+		m.msg = msg
+		return m, nil
+	}
+	if r.Act == "" {
+		return m, nil
+	}
+	return m.run(r.Act, r.Count, r.Counted)
+}
+
+// run does an action, from a key or the palette. n is the count typed
+// before it (1 when none).
+func (m Model) run(act string, n int, counted bool) (tea.Model, tea.Cmd) {
+	if m.file == "" && !strings.Contains(" quit find help palette ", " "+act+" ") {
+		return m, nil
+	}
+	switch act {
+	case "quit":
+		return m.quit()
+	case "close-file":
 		m.closeFile()
 		m.openFind()
 		return m, m.find.scan()
-	case "?":
-		m.mode = modeHelp
-	case "f", "o", "ctrl+p":
+	case "help":
+		m.mode, m.help = modeHelp, popup.Help{}
+	case "palette":
+		m.mode, m.pal = modePalette, popup.NewPalette(Keys, "")
+	case "find":
 		m.openFind()
 		return m, tea.Batch(m.find.scan(), m.find.preview(&m))
-	case "z":
+	case "zen":
 		return m.zen()
-	case "a":
+	case "talk":
 		if m.s.Agent == (state.Agent{}) {
 			m.s.Agent = state.Load().Agent
 		}
@@ -476,67 +526,81 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.talkOpen, m.mode, m.input = true, modeTalk, nil
 		return m, m.redraw()
-	case "/":
+	case "search":
 		m.mode, m.input = modeSearch, nil
-	case ":":
+	case "command":
 		m.mode, m.input = modeCommand, nil
-	case "n", "N":
-		return m, m.nextMatch(s == "n", n)
-	case "j", "down":
+	case "next-match", "prev-match":
+		return m, m.nextMatch(act == "next-match", n)
+	case "down":
 		return m, m.down(n)
-	case "k", "up":
+	case "up":
 		return m, m.up(n)
-	case "h", "left":
+	case "left":
 		return m, m.side(-n)
-	case "l", "right":
+	case "right":
 		return m, m.side(n)
-	case "J", "pgdown":
+	case "next-page":
 		return m, m.goTo(m.pos()+n, false)
-	case "K", "pgup":
+	case "prev-page":
 		return m, m.goTo(m.pos()-n, false)
-	case "ctrl+d":
+	case "half-down":
 		return m, m.scrollBy(n, 2)
-	case "ctrl+u":
+	case "half-up":
 		return m, m.scrollBy(-n, 2)
-	case "ctrl+f", " ":
+	case "page-down":
 		return m, m.scrollBy(n, 1)
-	case "ctrl+b":
+	case "page-up":
 		return m, m.scrollBy(-n, 1)
-	case "g":
+	case "first":
 		if counted {
 			return m, m.goTo(n, true)
 		}
-		m.pendingG = true
-	case "home":
 		return m, m.goTo(1, true)
-	case "G", "end":
+	case "last":
 		if counted {
 			return m, m.goTo(n, true)
 		}
 		return m, m.goTo(m.lastPos(), true)
-	case "+":
+	case "zoom-in":
 		m.zoom = min(m.zoom*1.25, 8)
 		return m, m.redraw()
-	case "-":
+	case "zoom-out":
 		m.zoom = max(m.zoom/1.25, 0.25)
 		return m, m.redraw()
-	case "=":
+	case "zoom-reset":
 		m.zoom, m.fitWidth, m.panX, m.panY = 1, false, 0, 0
 		return m, m.redraw()
-	case "w":
+	case "fit-width":
 		m.fitWidth, m.zoom, m.panX, m.panY = !m.fitWidth, 1, 0, 0
 		return m, m.redraw()
-	case "i":
+	case "invert":
 		m.s.Invert = !m.s.Invert
 		m.save()
 		return m, m.redraw()
-	case "r":
+	case "reload":
 		m.stamp = ""
 		return m, nil
-	case "y":
+	case "copy-path":
 		m.msg = copyText(m.file)
-	case "[", "]":
-		return m, m.sibling(s == "]")
+	case "prev-file", "next-file":
+		return m, m.sibling(act == "next-file")
+	case "open-viewer":
+		c := exec.Command("xdg-open", m.file)
+		c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := c.Start(); err != nil {
+			m.msg = "couldn't open it: " + err.Error()
+			return m, nil
+		}
+		go func() { _ = c.Wait() }()
+		m.msg = "opened in the desktop's viewer"
+	case "open-editor":
+		if m.kind != doc.Markdown {
+			m.msg = "only Markdown opens in $EDITOR"
+			return m, nil
+		}
+		ed := firstOr(os.Getenv("VISUAL"), firstOr(os.Getenv("EDITOR"), "vi"))
+		return m, tea.ExecProcess(exec.Command("sh", "-c", ed+` "$1"`, "sh", m.file), func(error) tea.Msg { return nil })
 	}
 	return m, nil
 }
@@ -950,9 +1014,17 @@ func (m Model) View() string {
 		rows[len(rows)-1] = m.footer() // a moment's message, over the page's last row
 	}
 	out := strings.Join(rows, "\n")
-	if m.mode == modeHelp {
-		box := m.helpBox()
+	switch {
+	case m.mode == modeHelp:
+		box := m.help.Box(m.st, Keys, "", m.w, m.h-2)
 		out = ui.Overlay(out, box, m.w, max(0, (m.h-len(box))/2))
+	case m.mode == modePalette:
+		box := m.pal.Box(m.st, m.w, m.h-2)
+		out = ui.Overlay(out, box, m.w, max(0, (m.h-len(box))/3))
+	case m.which && m.mode == modeRead:
+		if box := popup.WhichKey(m.st, m.eng.Pending(), m.eng.Hints(""), m.w); len(box) > 0 {
+			out = ui.Overlay(out, box, m.w, max(0, m.h-len(box)-1))
+		}
 	}
 	return out
 }
@@ -999,8 +1071,12 @@ func (m Model) footer() string {
 	case modeTalk:
 		return st.Footer("ask", [][2]string{{"⏎", "send"}, {"esc", "close"}}, m.msg, m.w)
 	}
-	keys := [][2]string{{"j/k", "move"}, {"/", "search"}, {"f", "find file"}, {"+/-", "zoom"}, {"i", "dark"}, {"z", "zen"}, {"a", "ask"}, {"q", "hide"}, {"x", "close"}, {"?", "keys"}}
-	return st.Footer("read", keys, m.msg, m.w)
+	keys := [][2]string{{"j/k", "move"}, {"/", "search"}, {"f", "find file"}, {"+/-", "zoom"}, {"z", "zen"}, {"␣k", "ask"}, {"␣", "more"}, {"q", "hide"}, {"?", "keys"}}
+	msg := m.msg
+	if m.eng.Waiting() && msg == "" {
+		msg = st.Peach.Render(m.eng.Pending() + " …")
+	}
+	return st.Footer("NORMAL", keys, msg, m.w)
 }
 
 // body draws the page, picture or text in the room, centred.
@@ -1106,27 +1182,6 @@ func firstOr(a, b string) string {
 		return a
 	}
 	return b
-}
-
-func (m Model) helpBox() []string {
-	st := m.st
-	var lines []string
-	where := ""
-	for _, k := range Keys {
-		if k.Where != where {
-			if where != "" {
-				lines = append(lines, "")
-			}
-			where = k.Where
-			lines = append(lines, st.Heading(where))
-		}
-		lines = append(lines, st.Accent.Render(ui.Fit(k.Keys, 22))+st.Text.Render(k.Desc))
-	}
-	w := min(m.w-4, 110)
-	if len(lines) > m.h-4 {
-		lines = lines[:max(1, m.h-4)]
-	}
-	return st.Popup("keys", lines, w, st.T.Accent)
 }
 
 func copyText(s string) string {

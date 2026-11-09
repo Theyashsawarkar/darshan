@@ -20,6 +20,10 @@ func press(t *testing.T, m Model, keys ...string) Model {
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
 		case "ctrl+d":
 			msg = tea.KeyMsg{Type: tea.KeyCtrlD}
+		case "ctrl+f":
+			msg = tea.KeyMsg{Type: tea.KeyCtrlF}
+		case " ":
+			msg = tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}
@@ -104,18 +108,47 @@ func TestLastFileStaysOpen(t *testing.T) {
 	if got := nm.(Model).scroll; got != 4 {
 		t.Fatalf("reopened at line %d", got)
 	}
-	// x closes it for good
-	n = press(t, nm.(Model), "x")
+	// Space b d closes it for good
+	n = press(t, nm.(Model), " ", "b", "d")
 	if again := New(Options{}); again.file != "" {
-		t.Fatalf("x left %q open", again.file)
+		t.Fatalf("Space b d left %q open", again.file)
 	}
 }
 
 func TestNoAgentNoTalk(t *testing.T) {
 	m, _ := mdModel(t)
-	m = press(t, m, "a")
+	m = press(t, m, " ", "k")
 	if m.mode == modeTalk || !strings.Contains(m.msg, "no agent") {
-		t.Fatalf("a without an agent: mode %d %q", m.mode, m.msg)
+		t.Fatalf("Space k without an agent: mode %d %q", m.mode, m.msg)
+	}
+}
+
+func TestSpaceIsTheLeader(t *testing.T) {
+	m, _ := mdModel(t)
+	m = press(t, m, " ")
+	if m.scroll != 0 || !m.eng.Waiting() {
+		t.Fatalf("Space paged (scroll %d) or isn't waiting", m.scroll)
+	}
+	m = press(t, m, "esc", "ctrl+f")
+	if m.scroll == 0 {
+		t.Fatal("Ctrl+f didn't page down")
+	}
+	m = press(t, m, "a")
+	if !strings.Contains(m.msg, "moved to Space k") {
+		t.Fatalf("a: %q", m.msg)
+	}
+	m = press(t, m, " ", " ")
+	if m.mode != modePalette {
+		t.Fatalf("Space Space: mode %d", m.mode)
+	}
+}
+
+func TestPopupKeyCloses(t *testing.T) {
+	m, _ := mdModel(t)
+	m.opt.Popup, m.opt.PopupKey = true, "v"
+	m = press(t, m, "v")
+	if !m.quitting {
+		t.Fatal("the popup key didn't close the popup")
 	}
 }
 
@@ -127,5 +160,27 @@ func TestZenHidesEverything(t *testing.T) {
 	m = press(t, m, "z")
 	if strings.Contains(m.View(), "a.md") {
 		t.Fatal("zen still shows the top line")
+	}
+}
+
+// Keys typed faster than the terminal is read come as one message ("5j",
+// "gg", "  "): each must still count as its own key.
+func TestFastKeysArriveTogether(t *testing.T) {
+	m, _ := mdModel(t)
+	burst := func(s string) {
+		nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+		m = nm.(Model)
+	}
+	burst("5j")
+	if m.scroll != 5 {
+		t.Fatalf("5j in one message: scroll %d", m.scroll)
+	}
+	burst("gg")
+	if m.scroll != 0 {
+		t.Fatalf("gg in one message: scroll %d", m.scroll)
+	}
+	burst("  ")
+	if m.mode != modePalette {
+		t.Fatalf("Space Space in one message: mode %d", m.mode)
 	}
 }

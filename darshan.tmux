@@ -2,7 +2,7 @@
 # darshan as a tmux plugin: TPM entry point (also works with a plain
 # `run-shell` on this file). Binds prefix + @darshan-key to open darshan in a
 # popup, or close it when it's open. Closing keeps the file: the same key
-# brings it back, where you left it, until you close it with x.
+# brings it back, where you left it, until you close it with Space b d.
 #
 # Options (set them before TPM's `run` line):
 #   @darshan-key       key after the prefix (default v; "none" binds nothing)

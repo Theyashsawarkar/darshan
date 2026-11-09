@@ -52,10 +52,10 @@ the page you're on, and its answer shows beside the page.
 - **Search the whole system**: `f` finds any PDF, image or Markdown file by
   name, with a live preview of the one you're on. Recent files come first.
 - **The popup remembers**: `prefix v` opens it and closes it. Your file and page
-  come back until you close the file with `x`.
+  come back until you close the file with `Space b d`.
 - **Zen mode**: `z` switches between the normal popup and the full screen with
   nothing but the page.
-- **Dark mode**: `i` inverts pages and pictures, for reading at night.
+- **Dark mode**: `Space u i` inverts pages and pictures, for reading at night.
 - **It follows the file**: when a file changes, it reloads and keeps your page.
 - **AI agents**: an MCP server lets any agent show you a file and talk about it.
 
@@ -89,48 +89,85 @@ the desktop a kitty window of its own.
 
 ## Keys
 
-**Reading**
+darshan uses the vim grammar every Vayu tool shares
+([vyakarana](https://github.com/Theyashsawarkar/vyakarana)): on the page
+you are in NORMAL (keys are commands; a number repeats a motion: `5j`,
+`12G`), the finder, the `/` search and the talk are typing. `Space` is the
+leader: press it and a box lists what can follow (`Space u` toggles the
+view, `Space b` the file, `Space o` opens it elsewhere, `Space k` asks
+the agent). `Space Space` searches every action, `?` shows every key.
+Inside the tmux popup its own key (`@darshan-key`, `v` by default) closes
+it, like pressing it again outside.
 
-| Key | |
+`Space` no longer pages down: `Ctrl+f` does. Keys that moved say where
+they went for one release: `a` → `Space k`, `i` → `Space u i`, `w` →
+`Space u w`, `x` → `Space b d`.
+
+<!-- keys: generated from the keymap; run the tests with -update -->
+**Everywhere**
+
+| Keys | What it does |
 |---|---|
-| `j / k` | Move down / up (next / previous page once the page is all shown) |
-| `h / l` | Move left / right when zoomed (else previous / next page) |
-| `J / K` | Move to the next / previous page |
-| `Ctrl+d / Ctrl+u` | Scroll half a screen down / up |
-| `Ctrl+f / Ctrl+b` | Scroll a screen down / up |
-| `g g / G` | Jump to the first / last page |
-| `N G / : N` | Jump to page (or line) N; a number before j, k, J or K repeats it |
-| `/` | Search the document's text |
-| `n / N` | Jump to the next / previous match |
-| `+ / -` | Grow / shrink the zoom |
-| `=` | Reset to fit the whole page |
-| `w` | Toggle fitting the page's width |
-| `i` | Invert the colours of pages and pictures (dark mode) |
-| `[ / ]` | Switch to the previous / next file in the folder |
-| `f / o / Ctrl+p` | Search for a file on the whole system (with a preview) |
-| `a` | Open the talk with the agent that opened this file, to ask it something |
-| `z` | Toggle zen mode: the full screen, nothing but the page |
-| `r` | Reload the file (it also reloads by itself when it changes) |
-| `y` | Copy the file's path |
-| `q / v` | Close the popup; the file stays open for next time |
-| `x` | Close the file |
-| `?` | Show every key |
+| <kbd>j</kbd> or <kbd>Down</kbd> | Move down (the next page once the page is all shown; 5j repeats) |
+| <kbd>k</kbd> or <kbd>Up</kbd> | Move up (the previous page once the page is all shown) |
+| <kbd>h</kbd> or <kbd>Left</kbd> | Move left when zoomed (else the previous page) |
+| <kbd>l</kbd> or <kbd>Right</kbd> | Move right when zoomed (else the next page) |
+| <kbd>J</kbd> or <kbd>PgDn</kbd> | Move to the next page |
+| <kbd>K</kbd> or <kbd>PgUp</kbd> | Move to the previous page |
+| <kbd>Ctrl+d</kbd> | Scroll half a screen down |
+| <kbd>Ctrl+u</kbd> | Scroll half a screen up |
+| <kbd>Ctrl+f</kbd> | Scroll a screen down (Space did this before it became the leader) |
+| <kbd>Ctrl+b</kbd> | Scroll a screen up |
+| <kbd>g</kbd> <kbd>g</kbd> or <kbd>Home</kbd> | Jump to the first page (5gg: page 5) |
+| <kbd>G</kbd> or <kbd>End</kbd> | Jump to the last page (5G: page 5) |
+| <kbd>:</kbd> or <kbd>Space</kbd> <kbd>g</kbd> <kbd>p</kbd> | Jump to a page (or line) by number: :12 (also :q, :bd, :e FILE) |
+| <kbd>/</kbd> | Search the document's text |
+| <kbd>n</kbd> | Jump to the next match |
+| <kbd>N</kbd> | Jump to the previous match |
+| <kbd>+</kbd> | Grow the zoom |
+| <kbd>-</kbd> | Shrink the zoom |
+| <kbd>=</kbd> | Reset to fit the whole page |
+| <kbd>[</kbd> or <kbd>Space</kbd> <kbd>b</kbd> <kbd>p</kbd> | Switch to the previous file in the folder |
+| <kbd>]</kbd> or <kbd>Space</kbd> <kbd>b</kbd> <kbd>n</kbd> | Switch to the next file in the folder |
+| <kbd>f</kbd> or <kbd>o</kbd> or <kbd>Ctrl+p</kbd> or <kbd>Space</kbd> <kbd>f</kbd> <kbd>f</kbd> | Search for a file on the whole system (with a preview) |
+| <kbd>z</kbd> or <kbd>Space</kbd> <kbd>u</kbd> <kbd>z</kbd> | Toggle zen mode: the full screen, nothing but the page |
+| <kbd>r</kbd> or <kbd>Space</kbd> <kbd>r</kbd> | Reload the file (it also reloads by itself when it changes) |
+| <kbd>y</kbd> or <kbd>Space</kbd> <kbd>y</kbd> <kbd>p</kbd> | Copy the file's path |
+| <kbd>?</kbd> or <kbd>Space</kbd> <kbd>?</kbd> | Show every key |
+| <kbd>q</kbd> or <kbd>Space</kbd> <kbd>q</kbd> | Close the popup; the file stays open for next time (the popup's own key too) |
+| <kbd>Space</kbd> <kbd>Space</kbd> | Search every action and run one (the palette) |
+| <kbd>Space</kbd> <kbd>b</kbd> | *File…* |
+| <kbd>Space</kbd> <kbd>b</kbd> <kbd>d</kbd> | Close the file (the popup then finds another) |
+| <kbd>Space</kbd> <kbd>k</kbd> | Open the talk with the agent that opened this file, to ask it something |
+| <kbd>Space</kbd> <kbd>o</kbd> | *Open…* |
+| <kbd>Space</kbd> <kbd>o</kbd> <kbd>b</kbd> | Open the file in the desktop's own viewer (xdg-open) |
+| <kbd>Space</kbd> <kbd>o</kbd> <kbd>e</kbd> | Open the file in $EDITOR (Markdown) |
+| <kbd>Space</kbd> <kbd>u</kbd> | *Toggles…* |
+| <kbd>Space</kbd> <kbd>u</kbd> <kbd>i</kbd> | Invert the colours of pages and pictures (dark mode) |
+| <kbd>Space</kbd> <kbd>u</kbd> <kbd>w</kbd> | Toggle fitting the page's width |
+| | *While typing* |
+| <kbd>Enter</kbd> | Run the search or the : command |
+| <kbd>Esc</kbd> | Cancel the search or the : command |
 
-**Searching for a file**
+**The file finder**
 
-| Key | |
+| Keys | What it does |
 |---|---|
-| `Enter` | Open the picked file |
-| `Up / Down / Ctrl+j / Ctrl+k` | Move through the results while typing |
-| `Esc` | Leave typing, then j, k, g g, G and Ctrl+d / Ctrl+u move (i types again; Esc again closes) |
-| `Tab / Shift+Tab` | Switch between all files, PDFs, images and Markdown |
+| <kbd>Enter</kbd> | Open the picked file |
+| <kbd>Tab</kbd> or <kbd>Shift+Tab</kbd> | Switch between all files, PDFs, images and Markdown |
+| | *While typing* |
+| <kbd>Ctrl+j</kbd> or <kbd>Down</kbd> or <kbd>Ctrl+n</kbd> | Move to the next result while typing |
+| <kbd>Ctrl+k</kbd> or <kbd>Up</kbd> or <kbd>Ctrl+p</kbd> | Move to the previous result while typing |
+| <kbd>Esc</kbd> | Leave typing (NORMAL: j, k, g g, G, Ctrl+d / Ctrl+u move; i, a or / type again; Esc or q closes) |
 
-**Talking to the agent**
+**The talk with the agent**
 
-| Key | |
+| Keys | What it does |
 |---|---|
-| `Enter` | Send your question, with what's on screen, to the agent |
-| `Esc` | Close the talk |
+| | *While typing* |
+| <kbd>Enter</kbd> | Send your question, with what's on screen, to the agent |
+| <kbd>Esc</kbd> | Close the talk |
+<!-- /keys -->
 
 ## AI agents
 
@@ -149,7 +186,7 @@ claude mcp add darshan -- darshan mcp
 | `view_reply` | Show an answer beside the page |
 | `view_close` | Close the file |
 
-**Asking.** When an agent opened the file, `a` opens the talk beside the page.
+**Asking.** When an agent opened the file, `Space k` opens the talk beside the page.
 Your question goes with the file, the page and the text on your screen: to the
 agent if it's waiting in `view_next_question`, else typed straight into its tmux
 pane, so it arrives like a message from you. If that pane has dropped to a shell

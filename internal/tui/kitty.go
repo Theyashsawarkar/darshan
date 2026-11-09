@@ -11,6 +11,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/Theyashsawarkar/vyakarana/text"
+
 	"github.com/Theyashsawarkar/darshan/internal/doc"
 )
 
@@ -91,13 +93,13 @@ func (g gfx) forget(ids ...uint32) {
 func placeholders(id uint32, cols, rows int) []string {
 	fg := fmt.Sprintf("\x1b[38;2;%d;%d;%dm", id>>16&255, id>>8&255, id&255)
 	out := make([]string, rows)
-	for r := 0; r < rows && r < len(diacritics); r++ {
+	for r := 0; r < rows && r < len(text.Diacritics); r++ {
 		var b strings.Builder
 		b.WriteString(fg)
-		for c := 0; c < cols && c < len(diacritics); c++ {
+		for c := 0; c < cols && c < len(text.Diacritics); c++ {
 			b.WriteRune(0x10EEEE)
-			b.WriteRune(diacritics[r])
-			b.WriteRune(diacritics[c])
+			b.WriteRune(text.Diacritics[r])
+			b.WriteRune(text.Diacritics[c])
 		}
 		b.WriteString("\x1b[39m")
 		out[r] = b.String()

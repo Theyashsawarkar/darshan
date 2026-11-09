@@ -54,3 +54,13 @@ func TestRecentKeepsNewestFirst(t *testing.T) {
 		t.Fatal(s.Recent)
 	}
 }
+
+// @darshan-key is a tmux key name; inside the popup it must match the
+// key as the screen spells it.
+func TestPopupKeyAsTheScreenSeesIt(t *testing.T) {
+	for in, want := range map[string]string{"v": "v", "V": "V", "C-v": "ctrl+v", "M-v": "alt+v", "F5": "f5", "Space": " "} {
+		if got := teaKey(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}

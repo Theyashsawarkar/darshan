@@ -130,3 +130,45 @@ func waitRunning() error {
 	}
 	return nil
 }
+
+// PopupKey is the key that opens the popup (@darshan-key, default v;
+// "" when it is "none"): inside the popup it closes it too.
+func PopupKey() string {
+	k := tmuxOpt("@darshan-key", "v")
+	if k == "none" {
+		return ""
+	}
+	return teaKey(k)
+}
+
+// teaKey spells a tmux key name ("C-v", "M-v", "F5", "Space") the way
+// the screen sees it (Bubble Tea's "ctrl+v", "alt+v", "f5", " ").
+func teaKey(k string) string {
+	ctrl, alt := false, false
+	for len(k) > 2 && k[1] == '-' {
+		switch k[0] {
+		case 'C', 'c':
+			ctrl = true
+		case 'M', 'm':
+			alt = true
+		case 'S', 's':
+			k = k[:2] + strings.ToUpper(k[2:])
+		}
+		k = k[2:]
+	}
+	switch {
+	case k == "Space":
+		k = " "
+	case len(k) > 1:
+		k = strings.ToLower(k)
+	case ctrl:
+		k = strings.ToLower(k)
+	}
+	if ctrl {
+		k = "ctrl+" + k
+	}
+	if alt {
+		k = "alt+" + k
+	}
+	return k
+}

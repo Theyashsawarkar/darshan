@@ -2,37 +2,20 @@ package tui
 
 import (
 	"flag"
-	"os"
-	"strings"
 	"testing"
+
+	"github.com/Theyashsawarkar/vyakarana/keymaptest"
 )
 
-var update = flag.Bool("update", false, "rewrite scripts/keybindings")
+var update = flag.Bool("update", false, "rewrite scripts/keybindings and the README's key tables")
 
-// scripts/keybindings (Vayu's keybinding search) must match Keys.
+// scripts/keybindings (Vayu's keybinding search) and the README's key
+// tables must match Keys.
 func TestKeybindingsFile(t *testing.T) {
-	const path = "../../scripts/keybindings"
-	want := KeybindingsFile()
-	if *update {
-		if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got, _ := os.ReadFile(path)
-	if string(got) != want {
-		t.Fatal("scripts/keybindings is out of date: go test ./internal/tui -update")
-	}
+	keymaptest.FileUpToDate(t, "../../scripts/keybindings", Keys.KeybindingsFile("Tmux", "go test ./internal/tui -update"), *update)
+	keymaptest.SectionUpToDate(t, "../../README.md", Keys.Markdown(), *update)
 }
 
-// Every key is in the README.
-func TestReadmeHasEveryKey(t *testing.T) {
-	b, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, k := range Keys {
-		if !strings.Contains(string(b), k.Desc) {
-			t.Errorf("README lacks %q (%s)", k.Desc, k.Keys)
-		}
-	}
-}
+// Every key follows the grammar: verb first, the reserved Space groups,
+// no key that is also the start of a longer one.
+func TestKeysFollowTheGrammar(t *testing.T) { keymaptest.All(t, Keys) }

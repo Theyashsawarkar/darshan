@@ -19,7 +19,7 @@ import (
 )
 
 // Version is darshan's version.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 const usage = `darshan: PDFs, images and Markdown in the terminal.
 
@@ -83,7 +83,7 @@ func main() {
 	case cmd == "help":
 		fmt.Print(usage)
 	case cmd == "keybindings": // scripts/keybindings, for Vayu's keybinding search
-		fmt.Print(tui.KeybindingsFile())
+		fmt.Print(tui.Keys.KeybindingsFile("Tmux", "go test ./internal/tui -update"))
 	case cmd == "mcp":
 		if err := mcpserver.Run(context.Background(), Version); err != nil {
 			die(err)
@@ -156,7 +156,11 @@ func main() {
 				return
 			}
 		}
-		if err := tui.Run(tui.Options{File: file, Page: *page, Popup: *popup, Client: *client, Exe: exe}); err != nil {
+		popupKey := ""
+		if *popup {
+			popupKey = state.PopupKey()
+		}
+		if err := tui.Run(tui.Options{File: file, Page: *page, Popup: *popup, PopupKey: popupKey, Client: *client, Exe: exe}); err != nil {
 			die(err)
 		}
 	}

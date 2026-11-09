@@ -15,14 +15,18 @@ paths, Vayu-specific behaviour only through the `@darshan-*` options.
   tmux client's own tty, and show through Unicode placeholders: the only way
   that works in tmux popups (tdf, for one, draws nothing there).
 - One screen at a time: it listens on a unix socket; `darshan open`, the popup
-  key and the MCP tools talk to it. Closing keeps state.json's file; only x
+  key and the MCP tools talk to it. Closing keeps state.json's file; only Space b d
   closes it.
 - A question goes to `view_next_question` if an agent is waiting, else it's
   typed into the agent's tmux pane, never when that pane has dropped to a
   shell. Document text always travels marked as data.
-- Keys live in `internal/tui/keys.go`. After a change: `go test ./internal/tui
-  -update` (rewrites `scripts/keybindings`), and update the README's key table.
-  Descriptions start with a verb from Vayu's keybind-search VERBS.
+- Keys follow the vim grammar every Vayu tool shares (NORMAL on the page,
+  a `Space` leader with reserved groups): the engine, popups (help, palette,
+  which-key) and the drawing kit come from github.com/Theyashsawarkar/vyakarana.
+  Keys live as data in `internal/tui/keys.go`. After a change: `go test
+  ./internal/tui -update` (rewrites `scripts/keybindings` and the README's
+  key tables between the `<!-- keys -->` markers). Descriptions start with
+  a verb from Vayu's keybind-search VERBS.
 - Every change gets a CHANGELOG.md entry and the README documents every
   feature, key and option; releases are tags with `Version` in cmd/darshan
   bumped. `make check` must pass.
