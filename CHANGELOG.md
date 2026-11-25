@@ -2,6 +2,10 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
+## Unreleased
+
+- The website has Vayu's Spatial look: graphite glass, a floating navigation bar, near-white for links and the main button, and the tool's own colour only as its signature (the logo's glow, the shloka's line, the release dots). No more all-caps labels.
+
 ## v0.2.0 -- 2026-11-09
 
 - Vim keys, the grammar every Vayu tool now shares (from the new shared
