@@ -32,10 +32,15 @@ type Origin = mcppipe.Origin
 
 // environ is this process's environment with the origin's variables in
 // place of its own, for the commands run on the agent's behalf.
+// An agent without TMUX isn't in tmux, so the daemon's own goes; an agent
+// that sent no PATH keeps the daemon's.
 func environ(o Origin) []string {
 	drop := map[string]bool{}
 	for _, k := range mcppipe.OriginEnv {
 		drop[k] = true
+	}
+	if _, ok := o.Env["PATH"]; !ok {
+		drop["PATH"] = false
 	}
 	var env []string
 	for _, kv := range os.Environ() {

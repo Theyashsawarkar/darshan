@@ -1,6 +1,7 @@
 package state
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,21 @@ func TestPopupKeyAsTheScreenSeesIt(t *testing.T) {
 		if got := teaKey(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
+	}
+}
+
+// An agent's commands are found on its own PATH.
+func TestCommandUsesAgentsPath(t *testing.T) {
+	dir := t.TempDir()
+	tool := dir + "/tmux"
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"PATH=/nowhere:" + dir}
+	if c := command(env, "tmux", "-V"); c.Path != tool {
+		t.Errorf("found %q, want %q", c.Path, tool)
+	}
+	if lookPath([]string{"PATH=/nowhere"}, "kitty") != "" {
+		t.Error("found kitty where there is none")
 	}
 }

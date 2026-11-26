@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,8 +59,9 @@ type Origin struct {
 }
 
 // OriginEnv are the variables that say where an agent runs: its tmux
-// server and pane, and its desktop (for a window of its own outside tmux).
-var OriginEnv = []string{"TMUX", "TMUX_PANE", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY"}
+// server and pane, its desktop (for a window of its own outside tmux), and
+// the PATH its commands (tmux, kitty) are found on.
+var OriginEnv = []string{"TMUX", "TMUX_PANE", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "PATH"}
 
 // Here is this process's own origin.
 func Here() Origin {
@@ -115,27 +116,6 @@ func init() {
 		}
 	}
 	Err = err
-}
-
-// Pipe joins stdin and stdout to the daemon, starting it if needed. It
-// returns an error, before reading stdin, when no daemon can be reached.
-func Pipe(exe string) error {
-	conn, err := Connect(Hello{Proto: Proto, Build: Build(), State: xdg.StateDir(), Origin: Here()}, exe)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	done := make(chan struct{}, 2)
-	go func() {
-		_, _ = io.Copy(conn, os.Stdin)
-		done <- struct{}{} // the agent left: end the session
-	}()
-	go func() {
-		_, _ = io.Copy(os.Stdout, conn)
-		done <- struct{}{}
-	}()
-	<-done
-	return nil
 }
 
 // Connect greets the daemon as h, starting `exe serve` when nobody

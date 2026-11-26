@@ -90,11 +90,14 @@ func main() {
 		// shares; here only when it failed (or for "darshan mcp" with flags)
 		if mcppipe.Err != nil {
 			fmt.Fprintf(os.Stderr, "darshan: no MCP daemon (%v): serving in this process\n", mcppipe.Err)
+		} else {
+			fmt.Fprintf(os.Stderr, "darshan: mcp with options (%s): serving in this process\n", strings.Join(os.Args[2:], " "))
 		}
 		if err := mcpserver.Run(context.Background(), Version); err != nil {
 			die(err)
 		}
 	case cmd == "serve": // hidden: the MCP daemon darshan mcp starts
+		mcpserver.CleanEnv()
 		if err := mcpserver.Serve(context.Background(), Version, mcppipe.Build()); err != nil {
 			die(err)
 		}

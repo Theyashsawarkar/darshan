@@ -8,8 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -156,6 +158,35 @@ func TestOriginEnviron(t *testing.T) {
 	}
 }
 
+// Each agent's commands come from its own PATH; with none sent, the daemon's.
+func TestOriginPath(t *testing.T) {
+	t.Setenv("PATH", "/daemon/bin")
+	if env := environ(Origin{Env: map[string]string{"PATH": "/agent/bin"}}); !slices.Contains(env, "PATH=/agent/bin") || slices.Contains(env, "PATH=/daemon/bin") {
+		t.Errorf("agent's PATH not used: %v", env)
+	}
+	if env := environ(Origin{}); !slices.Contains(env, "PATH=/daemon/bin") {
+		t.Errorf("no PATH at all: %v", env)
+	}
+}
+
+// The daemon doesn't hand its starter's preload or Claude's variables on.
+func TestCleanEnv(t *testing.T) {
+	for _, k := range []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "ANTHROPIC_API_KEY", "MCP_TIMEOUT"} {
+		t.Setenv(k, "x")
+	}
+	t.Setenv("DARSHAN_KEEP", "y")
+	CleanEnv()
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "LD_PRELOAD" || k == "LD_LIBRARY_PATH" || strings.HasPrefix(k, "CLAUDE") || strings.HasPrefix(k, "ANTHROPIC") || strings.HasPrefix(k, "MCP_") {
+			t.Errorf("%s left in", k)
+		}
+	}
+	if os.Getenv("DARSHAN_KEEP") != "y" {
+		t.Error("took too much")
+	}
+}
+
 // With nobody connected for Idle, the daemon exits and frees its socket;
 // a session holds it open.
 func TestIdleExit(t *testing.T) {
@@ -284,6 +315,77 @@ func TestBinary(t *testing.T) {
 		}
 	})
 
+	// the daemon killed mid-session: the call in flight gets an error, the
+	// pipe stays, and the next call works as the same agent
+	t.Run("restart", func(t *testing.T) {
+		opened := home(t)
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "notes.md"), []byte("# hi\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(bin, "mcp")
+		cmd.Dir = dir
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "TMUX") {
+				cmd.Env = append(cmd.Env, kv)
+			}
+		}
+		cmd.Env = append(cmd.Env, "TMUX_PANE=%7", "DARSHAN_SERVE_IDLE=2s")
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "1"}, nil).Connect(context.Background(), &mcp.CommandTransport{Command: cmd}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cs.Close()
+		call(t, cs, "view_status", nil)
+		first := servePids(bin)
+		if len(first) != 1 {
+			t.Fatalf("serve processes: %v", first)
+		}
+		waiting := make(chan error, 1)
+		go func() {
+			_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "view_next_question", Arguments: map[string]any{"timeout_seconds": 30}})
+			waiting <- err
+		}()
+		waiter := filepath.Join(state.Dir(), "waiter")
+		for i := 0; ; i++ {
+			if _, err := os.Stat(waiter); err == nil {
+				break
+			}
+			if i > 200 {
+				t.Fatal("view_next_question never started waiting")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t0 := time.Now()
+		defer func() { t.Logf("restart took %v", time.Since(t0)) }()
+		if err := syscall.Kill(first[0], syscall.SIGKILL); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-waiting:
+			if err == nil || !strings.Contains(err.Error(), mcppipe.Restarted) {
+				t.Fatalf("in-flight call: %v", err)
+			}
+			t.Logf("in-flight call failed after %v", time.Since(t0))
+		case <-time.After(10 * time.Second):
+			t.Fatal("in-flight call hangs")
+		}
+		call(t, cs, "view_open", map[string]any{"path": "notes.md"})
+		var got []state.Command
+		for _, c := range opened() {
+			if c.Cmd == "open" {
+				got = append(got, c)
+			}
+		}
+		want := state.Command{Cmd: "open", Path: filepath.Join(dir, "notes.md"), Agent: state.Agent{Name: "Claude Code", Pane: "%7"}}
+		if len(got) != 1 || got[0].Path != want.Path || got[0].Agent != want.Agent {
+			t.Fatalf("after the restart opened %+v, want %+v", got, want)
+		}
+		if again := servePids(bin); len(again) != 1 || again[0] == first[0] {
+			t.Errorf("serve processes after the kill: %v (killed %d)", again, first[0])
+		}
+	})
+
 	t.Run("fallback", func(t *testing.T) {
 		h := filepath.Join(t.TempDir(), "ro")
 		if err := os.Mkdir(h, 0o500); err != nil { // no room for a socket or a log
@@ -331,4 +433,27 @@ func TestLeavingStopsWaiting(t *testing.T) {
 	if fi2, _ := os.Stat(waiter); !fi2.ModTime().Equal(fi.ModTime()) {
 		t.Error("still waiting after the agent left")
 	}
+}
+
+// servePids are the running `bin serve` processes of this test's darshan home.
+func servePids(bin string) []int {
+	var out []int
+	ents, _ := os.ReadDir("/proc")
+	for _, e := range ents {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		if err != nil {
+			continue
+		}
+		if a := strings.Split(string(b), "\x00"); len(a) > 1 && a[0] == bin && a[1] == "serve" {
+			env, _ := os.ReadFile("/proc/" + e.Name() + "/environ")
+			if slices.Contains(strings.Split(string(env), "\x00"), "DARSHAN_HOME="+os.Getenv("DARSHAN_HOME")) {
+				out = append(out, pid)
+			}
+		}
+	}
+	return out
 }

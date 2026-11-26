@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -62,6 +63,20 @@ func lock(dir string) (*os.File, error) {
 			return nil, errRunning
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// CleanEnv takes out of this process's environment what the agent that
+// started the daemon leaves in it and no other agent should get: an
+// LD_PRELOAD or LD_LIBRARY_PATH (old shells carry a gtk4-layer-shell one
+// that crashes programs), and the agent's own CLAUDE*, ANTHROPIC* and MCP_*
+// variables. `darshan serve` calls it first.
+func CleanEnv() {
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "LD_PRELOAD" || k == "LD_LIBRARY_PATH" || strings.HasPrefix(k, "CLAUDE") || strings.HasPrefix(k, "ANTHROPIC") || strings.HasPrefix(k, "MCP_") {
+			_ = os.Unsetenv(k)
+		}
 	}
 }
 

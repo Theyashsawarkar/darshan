@@ -11,6 +11,13 @@ Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
   Markdown and highlighting code. Each agent keeps its own session, name, tmux
   pane and folder (relative paths in `view_open` start there). When the server
   can't be reached, `darshan mcp` serves in process as before.
+- The pipe outlives its server: when `darshan serve` goes away mid-session,
+  waiting calls get "darshan server restarted; try again" and the pipe starts
+  a new server, replays the session's start and goes on, without the agent
+  reconnecting. The server runs each agent's commands from that agent's
+  `PATH`, and drops `LD_PRELOAD`, `LD_LIBRARY_PATH` and `CLAUDE*`,
+  `ANTHROPIC*`, `MCP_*` variables from its own environment. `darshan mcp`
+  with options says on stderr that it serves in process.
 
 - The website, closer to Vayu's own: the tool's screenshot blurred behind the page, a centred hero with the logo and the verse, the page you're on as the white pill, glass "On this page" and footer panels, releases as cards. No glow behind the logo, no coloured line beside the verse.
 - The website has Vayu's Spatial look: graphite glass, a floating navigation bar, near-white for links and the main button, and the tool's own colour only as its signature (the logo's glow, the shloka's line, the release dots). No more all-caps labels.

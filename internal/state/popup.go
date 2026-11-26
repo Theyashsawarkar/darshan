@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -14,10 +15,37 @@ func Client(given, pane string) string { return clientIn(given, pane, nil) }
 
 // tmux runs tmux in env (nil: this process's own): an agent's TMUX names
 // the tmux server it runs in.
-func tmux(env []string, args ...string) *exec.Cmd {
-	c := exec.Command("tmux", args...)
-	c.Env = env
+func tmux(env []string, args ...string) *exec.Cmd { return command(env, "tmux", args...) }
+
+// command runs name in env (nil: this process's own), found on env's PATH:
+// an agent's commands are the ones it would run itself.
+func command(env []string, name string, args ...string) *exec.Cmd {
+	c := exec.Command(name, args...)
+	if env != nil {
+		c.Env = env
+		if p := lookPath(env, name); p != "" {
+			c.Path, c.Err = p, nil
+		}
+	}
 	return c
+}
+
+// lookPath finds name on env's PATH (nil: this process's), "" if nowhere.
+func lookPath(env []string, name string) string {
+	if env == nil {
+		p, _ := exec.LookPath(name)
+		return p
+	}
+	for _, dir := range filepath.SplitList(getenv(env, "PATH")) {
+		if dir == "" {
+			continue
+		}
+		p := filepath.Join(dir, name)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
 }
 
 func clientIn(given, pane string, env []string) string {
@@ -75,12 +103,11 @@ func openPopupIn(exe, client string, zen bool, env []string) error {
 			return err
 		}
 		title := tmuxOptIn(env, "@darshan-title", " darshan ")
-		c = exec.Command("sh", "-c", fmt.Sprintf("%s -E -T '%s' \"$0\"", strings.TrimSpace(string(exp)), title), run)
+		c = command(env, "sh", "-c", fmt.Sprintf("%s -E -T '%s' \"$0\"", strings.TrimSpace(string(exp)), title), run)
 	default:
 		c = tmux(env, "display-popup", "-c", client, "-E", "-w", tmuxOptIn(env, "@darshan-width", "90%"), "-h", tmuxOptIn(env, "@darshan-height", "88%"),
 			"-T", tmuxOptIn(env, "@darshan-title", " darshan "), run)
 	}
-	c.Env = env
 	// display-popup waits for the popup: it runs on its own
 	c.Stdin, c.Stdout, c.Stderr = nil, nil, nil
 	if err := c.Start(); err != nil {
@@ -130,11 +157,10 @@ func ShowIn(path string, page int, agent Agent, why, client string, env []string
 		}
 	}
 	// no tmux here (a file manager, a browser): a window of its own
-	if _, err := exec.LookPath("kitty"); err != nil {
+	if lookPath(env, "kitty") == "" {
 		return fmt.Errorf("no tmux client here and no kitty to open a window: run darshan in a terminal")
 	}
-	w := exec.Command("kitty", "--class", "darshan", "-T", "darshan", exe)
-	w.Env = env
+	w := command(env, "kitty", "--class", "darshan", "-T", "darshan", exe)
 	w.Stdin, w.Stdout, w.Stderr = nil, nil, nil
 	if err := w.Start(); err != nil {
 		return err

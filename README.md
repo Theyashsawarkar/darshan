@@ -199,9 +199,16 @@ it passes the agent's MCP to one shared `darshan serve`, which it starts when
 none runs, on `$XDG_RUNTIME_DIR/darshan/mcp.sock`. Each agent keeps its own
 session: its name, its tmux pane and its folder go with it, so questions still
 reach the right pane. The server leaves after a minute with no agent, and makes
-way for a newly installed darshan. If it can't be reached, `darshan mcp` serves
-in its own process as before (and says so on stderr; `serve.log` in the state
-folder has the server's errors).
+way for a newly installed darshan. If it goes away while an agent is working (a
+new install, a crash), the pipe stays: calls that were waiting get the error
+"darshan server restarted; try again", and it starts a new server and carries
+the session over (it keeps trying for a minute, then again at the next call).
+What lived only in the old server, such as a `view_next_question` in progress,
+is lost. If no server can be reached at the start, `darshan mcp` serves in its
+own process as before (and says so on stderr; `serve.log` in the state folder
+has the server's errors). The server runs each agent's commands (tmux, kitty)
+from that agent's `PATH`, and doesn't keep its starter's `LD_PRELOAD`,
+`LD_LIBRARY_PATH` or `CLAUDE*`, `ANTHROPIC*` and `MCP_*` variables.
 
 ## Options
 
