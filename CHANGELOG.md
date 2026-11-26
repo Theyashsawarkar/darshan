@@ -4,20 +4,30 @@ Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
 ## Unreleased
 
-- `darshan mcp` is a thin pipe now: every agent shares one `darshan serve`,
-  started on demand on `$XDG_RUNTIME_DIR/darshan/mcp.sock`, which leaves after
-  a minute with no agent and steps down when a new darshan is installed. Each
-  pipe costs about 3 MB instead of 12-27 MB, and skips loading the screen's
-  Markdown and highlighting code. Each agent keeps its own session, name, tmux
-  pane and folder (relative paths in `view_open` start there). When the server
-  can't be reached, `darshan mcp` serves in process as before.
-- The pipe outlives its server: when `darshan serve` goes away mid-session,
-  waiting calls get "darshan server restarted; try again" and the pipe starts
-  a new server, replays the session's start and goes on, without the agent
-  reconnecting. The server runs each agent's commands from that agent's
-  `PATH`, and drops `LD_PRELOAD`, `LD_LIBRARY_PATH` and `CLAUDE*`,
-  `ANTHROPIC*`, `MCP_*` variables from its own environment. `darshan mcp`
-  with options says on stderr that it serves in process.
+- One MCP server for every agent, on the pranali protocol: `darshan mcp`
+  execs [pranali](https://github.com/Theyashsawarkar/pranali) (`pranali darshan
+  --fallback darshan mcp --in-process`), which carries the agent's MCP to one
+  shared `darshan serve` on `$XDG_RUNTIME_DIR/darshan/mcp.sock`. Each agent
+  keeps its own session, name, tmux pane, desktop, `PATH` and folder (relative
+  paths in `view_open` start there). Without pranali, or with no server, it
+  serves in process as before, with one line on stderr.
+- systemd owns the server: `darshan-mcp.socket` and `darshan.service`, set up by
+  the new `darshan service install` (install.sh and `make service` run it;
+  `make install` puts the units in `$PREFIX/lib/systemd/user`). It starts on
+  the first agent and leaves after a minute with none. An update restarts it:
+  calls in flight get up to 20 s, a waiting `view_next_question` ends at once,
+  new calls are turned away untried, and agents carry over. A running server
+  never steps down for another build (the step-down of the unreleased pipe
+  left agents from before an update failing every call), and it never removes
+  a socket it didn't bind.
+- Answers aren't lost when an agent stops writing: the server still sends
+  what it owes on a half-closed connection.
+- The server drops `LD_PRELOAD`, `LD_LIBRARY_PATH` and `CLAUDE*`,
+  `ANTHROPIC*`, `MCP_*` variables from its own environment.
+- Gone: the pipe inside darshan (internal/mcppipe), which started the server
+  itself, kept it single with a lock, and ran from a package `init` before
+  the rest of darshan loaded. The server still accepts that pipe's hello for
+  this release, so agents started before the update keep working.
 
 - The website, closer to Vayu's own: the tool's screenshot blurred behind the page, a centred hero with the logo and the verse, the page you're on as the white pill, glass "On this page" and footer panels, releases as cards. No glow behind the logo, no coloured line beside the verse.
 - The website has Vayu's Spatial look: graphite glass, a floating navigation bar, near-white for links and the main button, and the tool's own colour only as its signature (the logo's glow, the shloka's line, the release dots). No more all-caps labels.

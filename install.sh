@@ -32,6 +32,7 @@ done
 say() { printf '\033[1;38;2;203;166;247m==>\033[0m %s\n' "$*"; }
 
 if [ "$UNINSTALL" = 1 ]; then
+  [ -x "$BIN_DIR/darshan" ] && "$BIN_DIR/darshan" service uninstall 2>/dev/null || true
   rm -f "$BIN_DIR/darshan"
   rm -rf "$DIR"
   say "Removed darshan ($BIN_DIR/darshan, $DIR)."
@@ -77,6 +78,13 @@ fi
 
 ln -sf "$DIR/darshan" "$BIN_DIR/darshan"
 say "Linked $BIN_DIR/darshan -> $DIR/darshan"
+
+# the MCP server every agent shares, started by systemd on the first agent
+# (and restarted here, so an update takes effect)
+if command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+  "$BIN_DIR/darshan" service install --exe "$BIN_DIR/darshan" ||
+    say "Couldn't set up darshan-mcp.socket: darshan mcp serves each agent in its own process."
+fi
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

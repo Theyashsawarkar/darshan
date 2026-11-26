@@ -1,0 +1,13 @@
+# darshan's MCP socket: AI agents reach darshan serve here through pranali,
+# and systemd starts darshan.service on the first connection.
+[Unit]
+Description=darshan MCP socket (AI agents, through pranali)
+
+[Socket]
+ListenStream=%t/darshan/mcp.sock
+SocketMode=0600
+DirectoryMode=0700
+Service=darshan.service
+
+[Install]
+WantedBy=sockets.target

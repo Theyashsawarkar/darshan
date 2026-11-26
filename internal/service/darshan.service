@@ -1,0 +1,16 @@
+# darshan serve: the one MCP server every AI agent shares. Started by
+# darshan-mcp.socket; leaves after a minute with no agent (the socket stays
+# and starts it again). An update restarts it: agents' calls in flight get
+# up to 20 s, and pranali carries their sessions over.
+[Unit]
+Description=darshan MCP server for AI agents
+Requires=darshan-mcp.socket
+After=darshan-mcp.socket
+
+[Service]
+Type=simple
+ExecStart=@DARSHAN@ serve
+TimeoutStopSec=30
+Restart=on-failure
+# windows and popups darshan opens for agents outlive it
+KillMode=process

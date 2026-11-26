@@ -76,6 +76,12 @@ To make it the desktop's viewer, install `packaging/darshan.desktop` and
 `darshan open FILE` shows a file in the running screen, a tmux popup, or from
 the desktop a kitty window of its own.
 
+For AI agents, install [pranali](https://github.com/Theyashsawarkar/pranali)
+too and run `darshan service install` (install.sh does it): every agent then
+shares one MCP server (see [AI agents](#ai-agents)). `make install` puts the
+two systemd units in `$PREFIX/lib/systemd/user`; enable them with
+`systemctl --user enable --now darshan-mcp.socket`.
+
 | Command | Does |
 |---|---|
 | `darshan [FILE] [-p N]` | The screen, on FILE or what you left open |
@@ -84,7 +90,10 @@ the desktop a kitty window of its own.
 | `darshan search WORDS [--kind pdf]` | Find files by name: one path a line |
 | `darshan status` | What's open |
 | `darshan close` | Close the open file |
-| `darshan mcp` | The MCP server, for AI agents (a pipe to the one `darshan serve` they share) |
+| `darshan mcp` | The MCP server, for AI agents (through pranali to the one `darshan serve` they share) |
+| `darshan serve` | The MCP server every agent shares, run by `darshan.service` |
+| `darshan service install` | Set up `darshan-mcp.socket` and `darshan.service` for you (systemd user units), or restart the server after an update; `--dir DIR` only writes them |
+| `darshan service uninstall` | Stop and remove them |
 | `darshan doctor` | Check what it needs |
 
 ## Keys
@@ -194,21 +203,31 @@ darshan won't type there; the question waits until the agent next asks for it.
 The document's text is marked as data, so words inside a PDF can't pose as your
 instructions. If the agent regenerates the file, it reloads where you were.
 
-**One server for every agent.** `darshan mcp` is only a pipe (about 3 MB):
-it passes the agent's MCP to one shared `darshan serve`, which it starts when
-none runs, on `$XDG_RUNTIME_DIR/darshan/mcp.sock`. Each agent keeps its own
-session: its name, its tmux pane and its folder go with it, so questions still
-reach the right pane. The server leaves after a minute with no agent, and makes
-way for a newly installed darshan. If it goes away while an agent is working (a
-new install, a crash), the pipe stays: calls that were waiting get the error
-"darshan server restarted; try again", and it starts a new server and carries
-the session over (it keeps trying for a minute, then again at the next call).
-What lived only in the old server, such as a `view_next_question` in progress,
-is lost. If no server can be reached at the start, `darshan mcp` serves in its
-own process as before (and says so on stderr; `serve.log` in the state folder
-has the server's errors). The server runs each agent's commands (tmux, kitty)
-from that agent's `PATH`, and doesn't keep its starter's `LD_PRELOAD`,
-`LD_LIBRARY_PATH` or `CLAUDE*`, `ANTHROPIC*` and `MCP_*` variables.
+**One server for every agent.** `darshan mcp` doesn't run a server of its own
+per agent: it hands over to [pranali](https://github.com/Theyashsawarkar/pranali),
+a small pipe that carries the agent's MCP to one shared `darshan serve` on
+`$XDG_RUNTIME_DIR/darshan/mcp.sock` (without a runtime dir,
+`~/.local/state/darshan/run/mcp.sock`; never `/tmp`). systemd owns it:
+`darshan-mcp.socket` listens, starts `darshan.service` on the first agent, and
+the server leaves after a minute with no agent, to start again on the next.
+Each agent keeps its own session: pranali's hello brings its folder, its tmux
+server and pane, its desktop and its `PATH`, so relative paths start in its
+folder, questions reach its pane and popups open on its tmux. The server runs
+each agent's commands (tmux, kitty) from that agent's `PATH`, and doesn't keep
+`LD_PRELOAD`, `LD_LIBRARY_PATH` or `CLAUDE*`, `ANTHROPIC*` and `MCP_*`
+variables from whoever started it.
+
+An update restarts the server (`darshan service install` does, and kosha and
+install.sh run it): calls in flight get up to 20 seconds to finish, a
+`view_next_question` that is waiting ends at once with "call it again", and
+agents that connect meanwhile wait at the socket. pranali carries each session
+over to the new server without the agent reconnecting; a call cut off in the
+middle comes back as an error that says it may or may not have happened. A
+running server never steps down for a different build. Without pranali, or
+when no server can be reached at the start, `darshan mcp` serves in its own
+process as before and says so in one line on stderr. Pipes from darshan 0.2's
+own `darshan mcp` still reach the new server, until the agents that run them
+restart.
 
 ## Options
 

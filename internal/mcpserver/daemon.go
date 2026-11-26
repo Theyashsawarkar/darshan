@@ -1,76 +1,44 @@
 package mcpserver
 
 // One MCP server for every agent: `darshan serve` listens on a unix socket
-// and runs one MCP session per connection, as the agent the connection's
-// hello names; `darshan mcp` (internal/mcppipe) is the pipe to it.
+// (systemd's darshan-mcp.socket, or its own) and runs one MCP session per
+// connection, as the agent the connection's hello names. Agents reach it
+// through pranali (`darshan mcp` execs it).
 
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/Theyashsawarkar/darshan/internal/mcppipe"
-	"github.com/Theyashsawarkar/darshan/internal/state"
 )
 
 // Idle is how long the daemon waits with no agent connected before it
-// exits; DARSHAN_SERVE_IDLE (a Go duration) changes it, for tests.
-var Idle = idleFromEnv()
+// exits (systemd starts it again on the next connection); DARSHAN_SERVE_IDLE
+// (a Go duration) changes it, for tests.
+var Idle = durationFromEnv("DARSHAN_SERVE_IDLE", 60*time.Second)
 
-func idleFromEnv() time.Duration {
-	if d, err := time.ParseDuration(os.Getenv("DARSHAN_SERVE_IDLE")); err == nil && d > 0 {
+// Drain is how long the calls in flight get to finish on SIGTERM.
+var Drain = 20 * time.Second
+
+func durationFromEnv(k string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(os.Getenv(k)); err == nil && d > 0 {
 		return d
 	}
-	return 60 * time.Second
+	return def
 }
 
-// Socket is where the daemon listens.
-func Socket() string { return mcppipe.Socket() }
-
-// errRunning means another daemon has the lock and answers.
-var errRunning = errors.New("darshan serve is already running")
-
-// lock takes the daemon's lock, waiting a little for one that is stepping
-// down; it fails at once when another daemon answers on the socket.
-func lock(dir string) (*os.File, error) {
-	f, err := os.OpenFile(filepath.Join(dir, "mcp.lock"), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	for end := time.Now().Add(2 * time.Second); ; {
-		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-			return f, nil
-		}
-		if c, err := net.DialTimeout("unix", Socket(), 200*time.Millisecond); err == nil {
-			c.Close()
-			f.Close()
-			return nil, errRunning
-		}
-		if time.Now().After(end) {
-			f.Close()
-			return nil, errRunning
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
-// CleanEnv takes out of this process's environment what the agent that
-// started the daemon leaves in it and no other agent should get: an
-// LD_PRELOAD or LD_LIBRARY_PATH (old shells carry a gtk4-layer-shell one
-// that crashes programs), and the agent's own CLAUDE*, ANTHROPIC* and MCP_*
-// variables. `darshan serve` calls it first.
+// CleanEnv takes out of this process's environment what the agent or
+// shell that started the daemon leaves in it and no other agent should
+// get: an LD_PRELOAD or LD_LIBRARY_PATH (old shells carry a
+// gtk4-layer-shell one that crashes programs), and the agent's own
+// CLAUDE*, ANTHROPIC* and MCP_* variables. `darshan serve` calls it first.
 func CleanEnv() {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
@@ -80,148 +48,235 @@ func CleanEnv() {
 	}
 }
 
-// Serve is `darshan serve`: the daemon, for pipes from build (mcppipe.Build).
-// It returns when it has had no connection for Idle, or once it has
-// stepped down and its sessions ended. Another daemon running is no error.
-func Serve(ctx context.Context, version, build string) error {
-	dir := mcppipe.SocketDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	_ = os.Chmod(dir, 0o700)
-	lk, err := lock(dir)
+// Serve is `darshan serve`. It returns after Idle with no agent, or when
+// ctx ends (SIGTERM) and the calls in flight have finished (at most
+// Drain). Another daemon already answering on the socket is no error.
+func Serve(ctx context.Context, version string) error {
+	l, stop, err := listen()
 	if errors.Is(err, errRunning) {
+		fmt.Fprintln(os.Stderr, "darshan serve: already running at", Socket())
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer lk.Close()
-	sock := Socket()
-	_ = os.Remove(sock) // left by a daemon that died: we hold the lock
-	old := syscall.Umask(0o177)
-	l, err := net.Listen("unix", sock)
-	syscall.Umask(old)
-	if err != nil {
-		return err
-	}
-	_ = os.Chmod(sock, 0o600)
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	d := &daemon{version: version, build: build, idleFor: Idle, l: l, lock: lk, sock: sock}
-	d.start()
-	go func() {
-		<-ctx.Done()
-		d.stepDown()
-	}()
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			break
-		}
-		d.add(1)
-		go func() {
-			defer d.add(-1)
-			d.session(ctx, conn)
-		}()
-	}
-	// stopped listening: let the sessions still open finish
-	d.mu.Lock()
-	for d.n > 0 {
-		d.cond.Wait()
-	}
-	d.mu.Unlock()
-	return nil
+	d := &daemon{version: version, l: l, stopListening: stop, conns: map[*conn]bool{},
+		changed: make(chan struct{}, 1), idle: make(chan struct{}), draining: make(chan struct{})}
+	return d.run(ctx)
 }
 
 type daemon struct {
-	version string
-	build   string
-	idleFor time.Duration
-	l       net.Listener
-	lock    *os.File
-	sock    string
+	version       string
+	l             net.Listener
+	stopListening func()
 
-	mu      sync.Mutex
-	cond    *sync.Cond
-	n       int // open sessions
-	timer   *time.Timer
-	stepped bool
+	mu       sync.Mutex
+	n        int // connections open
+	conns    map[*conn]bool
+	pending  int // requests in flight, over every connection
+	changed  chan struct{}
+	timer    *time.Timer
+	stopped  bool
+	idle     chan struct{} // closed when Idle passed with no connection
+	draining chan struct{} // closed on SIGTERM
+	gone     chan struct{} // closed when the last connection ends, once stopped
+	sessions sync.WaitGroup
 }
 
-func (d *daemon) add(delta int) {
+func (d *daemon) run(ctx context.Context) error {
+	// the sessions' own context: they outlive ctx while they drain
+	base, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.mu.Lock()
+	d.timer = time.AfterFunc(Idle, d.idleFired)
+	d.mu.Unlock()
+	go d.accept(base)
+
+	select {
+	case <-ctx.Done():
+	case <-d.idle:
+		if d.stop() == 0 {
+			return nil
+		}
+		// an agent came as the time ran out: let it finish
+		select {
+		case <-ctx.Done():
+		case <-d.gone:
+			return nil
+		}
+	}
+	d.stop()
+	d.drain()
+	return nil
+}
+
+func (d *daemon) accept(ctx context.Context) {
+	for {
+		nc, err := d.l.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond) // out of fds, say: try again
+			continue
+		}
+		d.mu.Lock()
+		if d.stopped {
+			d.mu.Unlock()
+			nc.Close()
+			continue
+		}
+		d.n++
+		if d.timer != nil {
+			d.timer.Stop()
+		}
+		d.sessions.Add(1)
+		d.mu.Unlock()
+		go func() {
+			defer d.sessions.Done()
+			defer d.left()
+			d.session(ctx, nc)
+		}()
+	}
+}
+
+func (d *daemon) left() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.n += delta
-	if d.timer != nil {
-		d.timer.Stop()
-		d.timer = nil
+	d.n--
+	if d.n > 0 {
+		return
 	}
-	if d.n == 0 {
-		d.cond.Broadcast()
-		if !d.stepped {
-			d.timer = time.AfterFunc(d.idleFor, d.stepDown)
+	if d.stopped {
+		close(d.gone)
+		return
+	}
+	d.timer = time.AfterFunc(Idle, d.idleFired)
+}
+
+func (d *daemon) idleFired() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.n == 0 && !d.stopped {
+		select {
+		case <-d.idle:
+		default:
+			close(d.idle)
 		}
 	}
 }
 
-func (d *daemon) start() {
+// stop stops taking agents and says how many are still connected; gone
+// closes when the last of them leaves.
+func (d *daemon) stop() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.cond = sync.NewCond(&d.mu)
-	d.timer = time.AfterFunc(d.idleFor, d.stepDown)
-}
-
-// stepDown stops taking agents and frees the socket and lock for a new
-// daemon; the sessions already open go on until their agents leave.
-func (d *daemon) stepDown() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stepped {
-		return
+	if !d.stopped {
+		d.stopped = true
+		if d.timer != nil {
+			d.timer.Stop()
+		}
+		d.stopListening()
+		d.gone = make(chan struct{})
+		if d.n == 0 {
+			close(d.gone)
+		}
 	}
-	d.stepped = true
-	_ = d.l.Close()
-	_ = os.Remove(d.sock)
-	_ = syscall.Flock(int(d.lock.Fd()), syscall.LOCK_UN)
+	return d.n
 }
 
-type connReader struct {
-	*bufio.Reader
-	io.Closer
+// drain lets the calls in flight finish (at most Drain), then ends every
+// connection. Waiting for a question isn't a call in flight: it ends at once.
+func (d *daemon) drain() {
+	d.mu.Lock()
+	close(d.draining)
+	for c := range d.conns {
+		c.stop()
+	}
+	d.mu.Unlock()
+	limit := time.After(Drain)
+wait:
+	for {
+		d.mu.Lock()
+		n := d.pending
+		d.mu.Unlock()
+		if n <= 0 {
+			break
+		}
+		select {
+		case <-d.changed:
+		case <-limit:
+			break wait
+		}
+	}
+	d.mu.Lock()
+	for c := range d.conns {
+		c.end()
+	}
+	d.mu.Unlock()
+	done := make(chan struct{})
+	go func() { d.sessions.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second): // a call stuck past Drain dies with the process
+	}
 }
 
-// session runs one agent's MCP session on conn, as that agent's Origin.
-func (d *daemon) session(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	br := bufio.NewReader(conn)
-	line, err := br.ReadBytes('\n')
+func (d *daemon) isDraining() bool {
+	select {
+	case <-d.draining:
+		return true
+	default:
+		return false
+	}
+}
+
+func (d *daemon) inflight(delta int) {
+	d.mu.Lock()
+	d.pending += delta
+	d.mu.Unlock()
+	select {
+	case d.changed <- struct{}{}:
+	default:
+	}
+}
+
+// refuse turns calls away once the daemon is stopping: they never start,
+// so the agent can safely make them again.
+func (d *daemon) refuse(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method == "tools/call" && d.isDraining() {
+			return nil, errors.New("darshan is restarting: nothing was done; try again in a moment")
+		}
+		return next(ctx, method, req)
+	}
+}
+
+// session runs one agent's MCP session on nc, as that agent's Origin.
+func (d *daemon) session(ctx context.Context, nc net.Conn) {
+	defer nc.Close()
+	br := bufio.NewReaderSize(nc, maxHello)
+	o, err := greet(nc, br)
 	if err != nil {
 		return
 	}
-	var h mcppipe.Hello
-	reply := func(a mcppipe.Answer) bool { return json.NewEncoder(conn).Encode(a) == nil }
-	switch err := json.Unmarshal(line, &h); {
-	case err != nil || h.Proto != mcppipe.Proto:
-		reply(mcppipe.Answer{Error: "not a darshan mcp hello"})
-		return
-	case h.Build != d.build:
-		// a new darshan is installed: make room for its daemon
-		reply(mcppipe.Answer{Error: fmt.Sprintf("darshan serve is %q, darshan mcp is %q", d.build, h.Build), Retry: true})
-		d.stepDown()
-		return
-	case h.State != state.Dir():
-		reply(mcppipe.Answer{Error: "darshan serve keeps its state in " + state.Dir() + ", not " + h.State})
+	c := newConn(d, nc, br)
+	d.mu.Lock()
+	if d.isDraining() {
+		d.mu.Unlock()
 		return
 	}
-	if !reply(mcppipe.Answer{OK: true}) {
-		return
-	}
-	_ = conn.SetDeadline(time.Time{})
-	s := &server{origin: h.Origin, env: environ(h.Origin)}
-	ss, err := newServer(d.version, s).Connect(ctx, &mcp.IOTransport{Reader: connReader{br, conn}, Writer: conn}, nil)
+	d.conns[c] = true
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.conns, c)
+		d.mu.Unlock()
+		c.forget()
+	}()
+	srv := newServer(d.version, &server{origin: o, env: environ(o), halt: c.halt})
+	srv.AddReceivingMiddleware(d.refuse)
+	ss, err := srv.Connect(ctx, &mcp.IOTransport{Reader: c, Writer: c}, nil)
 	if err != nil {
 		return
 	}

@@ -1,6 +1,4 @@
-// Package xdg finds darshan's folders. It imports nothing beyond os and
-// path/filepath, so internal/mcppipe can use it before the heavy packages
-// initialise (see there).
+// Package xdg finds darshan's folders.
 package xdg
 
 import (
@@ -21,5 +19,5 @@ func Home(env, def string) string {
 	return filepath.Join(h, def, "darshan")
 }
 
-// StateDir holds state.json, the question queue and serve.log.
+// StateDir holds state.json and the question queue.
 func StateDir() string { return Home("XDG_STATE_HOME", ".local/state") }

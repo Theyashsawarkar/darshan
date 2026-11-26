@@ -8,13 +8,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/Theyashsawarkar/darshan/internal/doc"
 	"github.com/Theyashsawarkar/darshan/internal/index"
-	"github.com/Theyashsawarkar/darshan/internal/mcppipe"
 	"github.com/Theyashsawarkar/darshan/internal/mcpserver"
+	"github.com/Theyashsawarkar/darshan/internal/service"
 	"github.com/Theyashsawarkar/darshan/internal/state"
 	"github.com/Theyashsawarkar/darshan/internal/tui"
 )
@@ -31,7 +33,12 @@ const usage = `darshan: PDFs, images and Markdown in the terminal.
   darshan search WORDS     find files by name, across the system: one path a line
   darshan status           what's open
   darshan close            close the open file
-  darshan mcp              the MCP server, for AI agents
+  darshan mcp              the MCP server, for AI agents (through pranali to
+                           darshan serve when it can, else in this process)
+  darshan serve            the MCP server every agent shares (darshan.service)
+  darshan service install  set up darshan-mcp.socket and darshan.service for
+                           this user (systemd), or restart them after an update
+  darshan service uninstall
   darshan doctor           check what it needs
   darshan --version
 
@@ -51,6 +58,9 @@ func main() {
 	openNow := fs.Bool("open", false, "")
 	kind := fs.String("kind", "", "")
 	version := fs.Bool("version", false, "")
+	inProcess := fs.Bool("in-process", false, "")
+	unitDir := fs.String("dir", "", "")
+	unitExe := fs.String("exe", "", "")
 	fs.Usage = func() { fmt.Print(usage) }
 
 	// flags may come after the file
@@ -60,7 +70,7 @@ func main() {
 		a := args[i]
 		if strings.HasPrefix(a, "-") && a != "-" {
 			flags = append(flags, a)
-			if (a == "-p" || a == "--client" || a == "--kind" || a == "-client" || a == "-kind") && i+1 < len(args) {
+			if (a == "-p" || a == "--client" || a == "--kind" || a == "-client" || a == "-kind" || a == "--dir" || a == "--exe") && i+1 < len(args) {
 				i++
 				flags = append(flags, args[i])
 			}
@@ -74,7 +84,7 @@ func main() {
 	cmd := ""
 	if len(pos) > 0 {
 		switch pos[0] {
-		case "open", "popup", "search", "status", "close", "mcp", "serve", "doctor", "help", "keybindings":
+		case "open", "popup", "search", "status", "close", "mcp", "serve", "service", "doctor", "help", "keybindings":
 			cmd, pos = pos[0], pos[1:]
 		}
 	}
@@ -86,21 +96,16 @@ func main() {
 	case cmd == "keybindings": // scripts/keybindings, for Vayu's keybinding search
 		fmt.Print(tui.Keys.KeybindingsFile("Tmux", "go test ./internal/tui -update"))
 	case cmd == "mcp":
-		// mcppipe's init has already tried the pipe to the daemon every agent
-		// shares; here only when it failed (or for "darshan mcp" with flags)
-		if mcppipe.Err != nil {
-			fmt.Fprintf(os.Stderr, "darshan: no MCP daemon (%v): serving in this process\n", mcppipe.Err)
-		} else {
-			fmt.Fprintf(os.Stderr, "darshan: mcp with options (%s): serving in this process\n", strings.Join(os.Args[2:], " "))
-		}
-		if err := mcpserver.Run(context.Background(), Version); err != nil {
-			die(err)
-		}
-	case cmd == "serve": // hidden: the MCP daemon darshan mcp starts
+		mcp(exe, *inProcess)
+	case cmd == "serve": // the MCP daemon, run by darshan.service
 		mcpserver.CleanEnv()
-		if err := mcpserver.Serve(context.Background(), Version, mcppipe.Build()); err != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		if err := mcpserver.Serve(ctx, Version); err != nil {
 			die(err)
 		}
+	case cmd == "service":
+		serviceCmd(pos, *unitDir, *unitExe)
 	case cmd == "open":
 		if len(pos) != 1 {
 			die(fmt.Errorf("open takes one file"))
@@ -198,6 +203,14 @@ func doctor() {
 	fmt.Printf("  terminal   %s (real pictures need kitty's graphics protocol; others get coloured blocks)\n", t)
 	fmt.Printf("  shows      %s\n", strings.Join(extList(), " "))
 	fmt.Printf("  searches   %s\n", strings.Join(index.Roots(index.LoadConfig()), " "))
+	agents := "no pranali on PATH: darshan mcp serves each agent in its own process"
+	if p, err := exec.LookPath("pranali"); err == nil {
+		agents = "pranali " + p + " to darshan serve at " + mcpserver.Socket()
+		if _, err := os.Stat(mcpserver.Socket()); err != nil {
+			agents += " (not listening: darshan service install)"
+		}
+	}
+	fmt.Printf("  agents     %s\n", agents)
 	if bad {
 		os.Exit(1)
 	}
@@ -209,4 +222,56 @@ func extList() []string {
 		out = append(out, e)
 	}
 	return out
+}
+
+// mcp is `darshan mcp`: pranali to the shared darshan serve, with this
+// process serving in its stead when no daemon answers; without pranali,
+// this process.
+func mcp(self string, inProcess bool) {
+	if !inProcess && len(os.Args) == 2 {
+		if p, err := exec.LookPath("pranali"); err == nil && self != "" {
+			env := os.Environ()
+			if os.Getenv("PRANALI_SOCKET") == "" && os.Getenv("DARSHAN_HOME") != "" {
+				env = append(env, "PRANALI_SOCKET="+mcpserver.Socket()) // a separate darshan's own daemon
+			}
+			err = syscall.Exec(p, []string{"pranali", "darshan", "--fallback", self, "mcp", "--in-process"}, env)
+			fmt.Fprintf(os.Stderr, "darshan: can't run pranali (%v): serving in this process\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "darshan: no pranali on PATH: serving in this process")
+		}
+	} else if !inProcess {
+		fmt.Fprintf(os.Stderr, "darshan: mcp with options (%s): serving in this process\n", strings.Join(os.Args[2:], " "))
+	} else {
+		fmt.Fprintln(os.Stderr, "darshan: no MCP daemon answers: serving in this process")
+	}
+	if err := mcpserver.Run(context.Background(), Version); err != nil {
+		die(err)
+	}
+}
+
+func serviceCmd(pos []string, dir, exe string) {
+	if len(pos) != 1 {
+		die(fmt.Errorf("service install [--dir DIR] [--exe PATH], or service uninstall"))
+	}
+	var err error
+	if exe == "" {
+		if exe, err = service.Exe(); err != nil {
+			die(err)
+		}
+	}
+	switch {
+	case pos[0] == "install" && dir != "": // for packages: only write the units
+		err = service.Write(dir, exe)
+	case pos[0] == "install":
+		if err = service.Install(exe); err == nil {
+			fmt.Printf("darshan: %s listens for agents (%s runs %s serve)\n", service.Socket, service.Unit, exe)
+		}
+	case pos[0] == "uninstall":
+		err = service.Uninstall()
+	default:
+		err = fmt.Errorf("service %s: install or uninstall", pos[0])
+	}
+	if err != nil {
+		die(err)
+	}
 }
