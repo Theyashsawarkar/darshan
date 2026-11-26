@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -241,12 +242,19 @@ func (d *daemon) inflight(delta int) {
 	}
 }
 
+// A call refused while draining (pranali's amended spec): it never ran,
+// and pranali passes it on as safe to retry.
+const (
+	CodeRestarting = -32002
+	MsgRestarting  = "darshan is restarting; this call was not run, retry it"
+)
+
 // refuse turns calls away once the daemon is stopping: they never start,
 // so the agent can safely make them again.
 func (d *daemon) refuse(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		if method == "tools/call" && d.isDraining() {
-			return nil, errors.New("darshan is restarting: nothing was done; try again in a moment")
+			return nil, &jsonrpc.Error{Code: CodeRestarting, Message: MsgRestarting}
 		}
 		return next(ctx, method, req)
 	}

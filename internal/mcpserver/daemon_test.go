@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Theyashsawarkar/darshan/internal/state"
@@ -471,8 +472,10 @@ func TestDrain(t *testing.T) {
 	if _, err := net.Dial("unix", Socket()); err == nil {
 		t.Error("still taking agents")
 	}
-	if _, err := callErr(cs, "view_status", nil); err == nil || !strings.Contains(err.Error(), "restarting") {
-		t.Errorf("a new call while draining: %v", err)
+	_, err := callErr(cs, "view_status", nil)
+	var we *jsonrpc.Error
+	if !errors.As(err, &we) || we.Code != -32002 || we.Message != "darshan is restarting; this call was not run, retry it" {
+		t.Errorf("a new call while draining: %#v", err)
 	}
 	select {
 	case <-done:
