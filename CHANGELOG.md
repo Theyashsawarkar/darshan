@@ -4,6 +4,14 @@ Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
 ## Unreleased
 
+- `darshan mcp` is a thin pipe now: every agent shares one `darshan serve`,
+  started on demand on `$XDG_RUNTIME_DIR/darshan/mcp.sock`, which leaves after
+  a minute with no agent and steps down when a new darshan is installed. Each
+  pipe costs about 3 MB instead of 12-27 MB, and skips loading the screen's
+  Markdown and highlighting code. Each agent keeps its own session, name, tmux
+  pane and folder (relative paths in `view_open` start there). When the server
+  can't be reached, `darshan mcp` serves in process as before.
+
 - The website, closer to Vayu's own: the tool's screenshot blurred behind the page, a centred hero with the logo and the verse, the page you're on as the white pill, glass "On this page" and footer panels, releases as cards. No glow behind the logo, no coloured line beside the verse.
 - The website has Vayu's Spatial look: graphite glass, a floating navigation bar, near-white for links and the main button, and the tool's own colour only as its signature (the logo's glow, the shloka's line, the release dots). No more all-caps labels.
 

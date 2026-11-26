@@ -13,6 +13,7 @@ import (
 
 	"github.com/Theyashsawarkar/darshan/internal/doc"
 	"github.com/Theyashsawarkar/darshan/internal/index"
+	"github.com/Theyashsawarkar/darshan/internal/mcppipe"
 	"github.com/Theyashsawarkar/darshan/internal/mcpserver"
 	"github.com/Theyashsawarkar/darshan/internal/state"
 	"github.com/Theyashsawarkar/darshan/internal/tui"
@@ -73,7 +74,7 @@ func main() {
 	cmd := ""
 	if len(pos) > 0 {
 		switch pos[0] {
-		case "open", "popup", "search", "status", "close", "mcp", "doctor", "help", "keybindings":
+		case "open", "popup", "search", "status", "close", "mcp", "serve", "doctor", "help", "keybindings":
 			cmd, pos = pos[0], pos[1:]
 		}
 	}
@@ -85,7 +86,16 @@ func main() {
 	case cmd == "keybindings": // scripts/keybindings, for Vayu's keybinding search
 		fmt.Print(tui.Keys.KeybindingsFile("Tmux", "go test ./internal/tui -update"))
 	case cmd == "mcp":
+		// mcppipe's init has already tried the pipe to the daemon every agent
+		// shares; here only when it failed (or for "darshan mcp" with flags)
+		if mcppipe.Err != nil {
+			fmt.Fprintf(os.Stderr, "darshan: no MCP daemon (%v): serving in this process\n", mcppipe.Err)
+		}
 		if err := mcpserver.Run(context.Background(), Version); err != nil {
+			die(err)
+		}
+	case cmd == "serve": // hidden: the MCP daemon darshan mcp starts
+		if err := mcpserver.Serve(context.Background(), Version, mcppipe.Build()); err != nil {
 			die(err)
 		}
 	case cmd == "open":

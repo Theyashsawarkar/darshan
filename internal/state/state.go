@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Theyashsawarkar/darshan/internal/xdg"
 )
 
 // Agent is who opened the file through MCP: where questions go.
@@ -50,25 +52,14 @@ func (s *State) Remember(path string) {
 	s.Recent = out
 }
 
-func home(env, def string) string {
-	if h := os.Getenv("DARSHAN_HOME"); h != "" {
-		return h
-	}
-	if v := os.Getenv(env); v != "" {
-		return filepath.Join(v, "darshan")
-	}
-	h, _ := os.UserHomeDir()
-	return filepath.Join(h, def, "darshan")
-}
-
 // Dir holds state.json and the question queue.
-func Dir() string { return home("XDG_STATE_HOME", ".local/state") }
+func Dir() string { return xdg.StateDir() }
 
 // CacheDir holds rendered pages and the file index.
-func CacheDir() string { return home("XDG_CACHE_HOME", ".cache") }
+func CacheDir() string { return xdg.Home("XDG_CACHE_HOME", ".cache") }
 
 // ConfigDir holds config.toml.
-func ConfigDir() string { return home("XDG_CONFIG_HOME", ".config") }
+func ConfigDir() string { return xdg.Home("XDG_CONFIG_HOME", ".config") }
 
 // Load reads the state; a missing or broken file is an empty state.
 func Load() State {

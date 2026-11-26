@@ -84,7 +84,7 @@ the desktop a kitty window of its own.
 | `darshan search WORDS [--kind pdf]` | Find files by name: one path a line |
 | `darshan status` | What's open |
 | `darshan close` | Close the open file |
-| `darshan mcp` | The MCP server |
+| `darshan mcp` | The MCP server, for AI agents (a pipe to the one `darshan serve` they share) |
 | `darshan doctor` | Check what it needs |
 
 ## Keys
@@ -193,6 +193,15 @@ pane, so it arrives like a message from you. If that pane has dropped to a shell
 darshan won't type there; the question waits until the agent next asks for it.
 The document's text is marked as data, so words inside a PDF can't pose as your
 instructions. If the agent regenerates the file, it reloads where you were.
+
+**One server for every agent.** `darshan mcp` is only a pipe (about 3 MB):
+it passes the agent's MCP to one shared `darshan serve`, which it starts when
+none runs, on `$XDG_RUNTIME_DIR/darshan/mcp.sock`. Each agent keeps its own
+session: its name, its tmux pane and its folder go with it, so questions still
+reach the right pane. The server leaves after a minute with no agent, and makes
+way for a newly installed darshan. If it can't be reached, `darshan mcp` serves
+in its own process as before (and says so on stderr; `serve.log` in the state
+folder has the server's errors).
 
 ## Options
 

@@ -10,7 +10,14 @@ paths, Vayu-specific behaviour only through the `@darshan-*` options.
   `render.go` pages to PNGs, `kitty.go` graphics); `internal/doc` PDFs through
   poppler, images, Markdown; `internal/index` the system-wide file list (fd);
   `internal/state` what's remembered, the control socket, popups and questions
-  to agents; `internal/mcpserver` the agent tools.
+  to agents; `internal/mcpserver` the agent tools and `darshan serve`, the
+  one MCP daemon every agent shares; `internal/mcppipe` is `darshan mcp`,
+  the pipe to it. The pipe runs from mcppipe's init, before the heavy
+  packages initialise: mcppipe may import only early-sorting standard
+  packages and internal/xdg (not net, not internal/state); TestBinary/light
+  checks. Anything that says which agent a session is (pane, tmux server,
+  folder) comes from the pipe's hello (mcppipe.Origin), never the daemon's
+  own environment.
 - Pictures go to the terminal with kitty's graphics protocol, written to the
   tmux client's own tty, and show through Unicode placeholders: the only way
   that works in tmux popups (tdf, for one, draws nothing there).
