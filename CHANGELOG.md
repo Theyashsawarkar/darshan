@@ -2,7 +2,7 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
-## Unreleased
+## v0.3.0 -- 2026-11-27
 
 - One MCP server for every agent, on the pranali protocol: `darshan mcp`
   execs [pranali](https://github.com/Theyashsawarkar/pranali) (`pranali darshan
