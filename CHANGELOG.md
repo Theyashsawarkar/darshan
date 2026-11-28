@@ -2,6 +2,10 @@
 
 Newest first. Releases are tags (`vX.Y.Z`) with `Version` in cmd/darshan.
 
+## Unreleased
+
+- Website: pranali joins the family list in the footer; the site builder passes ruff.
+
 ## v0.3.0 -- 2026-11-27
 
 - One MCP server for every agent, on the pranali protocol: `darshan mcp`
